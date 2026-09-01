@@ -166,7 +166,7 @@ export default function Home() {
       <main className="mx-auto w-full max-w-md">
         <header className="mb-14 sm:mb-16">
           <h1 className="text-3xl font-semibold tracking-tight text-neutral-900 sm:text-4xl">
-            나의 스마트 가계부
+            성용이의 스마트 가계부
           </h1>
           <p className="mt-3 text-base leading-relaxed text-neutral-500 sm:text-[15px]">
             수입과 지출을 기록하고 관리해 보세요.
