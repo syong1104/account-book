@@ -82,3 +82,42 @@ export async function insertTransaction({
 
   return { data: null, error: withType.error };
 }
+
+export async function deleteTransactions(ids: string[]) {
+  if (ids.length === 0) {
+    return { data: [] as string[], error: new Error("삭제할 내역이 없습니다.") };
+  }
+
+  const { error } = await supabase.from("expenses").delete().in("id", ids);
+
+  if (error) {
+    return { data: [], error };
+  }
+
+  return { data: ids, error: null };
+}
+
+export function findRecordsToDelete(
+  records: Expense[],
+  criteria: {
+    type?: TransactionType;
+    date?: string;
+    amount?: number;
+    description?: string;
+  },
+) {
+  return records.filter((record) => {
+    if (criteria.type && record.type !== criteria.type) return false;
+    if (criteria.date && record.date !== criteria.date) return false;
+    if (criteria.amount && record.amount !== criteria.amount) return false;
+    if (
+      criteria.description &&
+      !record.description
+        .toLowerCase()
+        .includes(criteria.description.toLowerCase())
+    ) {
+      return false;
+    }
+    return true;
+  });
+}

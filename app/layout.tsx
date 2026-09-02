@@ -18,8 +18,8 @@ export const viewport: Viewport = {
 };
 
 export const metadata: Metadata = {
-  title: "성용이의 스마트 가계부",
-  description: "간단하고 깔끔한 AI 가계부",
+  title: "성용이의 가계부 챗봇",
+  description: "AI 챗봇으로 관리하는 스마트 가계부",
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
@@ -28,7 +28,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
       lang="ko"
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
-      <body className="min-h-full flex flex-col font-sans">{children}</body>
+      <body className="min-h-full overflow-hidden flex flex-col font-sans">{children}</body>
     </html>
   );
 }
