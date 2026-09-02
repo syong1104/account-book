@@ -320,77 +320,79 @@ export default function Home() {
   }
 
   return (
-    <div className="flex h-[100dvh] flex-col bg-[#f5f5f7]">
-      <header className="shrink-0 border-b border-neutral-200/80 bg-white px-3 py-3 md:px-4 md:py-3">
+    <div className="flex h-dvh flex-col overflow-hidden bg-[#f5f5f7]">
+      <header className="z-10 shrink-0 border-b border-neutral-200/80 bg-white px-3 py-3 md:px-4 md:py-3">
         <h1 className="text-center text-[15px] font-semibold text-neutral-900 md:text-[16px]">
           성용이의 가계부 챗봇
         </h1>
       </header>
 
-      <div className="mx-auto w-full max-w-4xl shrink-0">
-        {!isLoadingRecords && (
-          <>
-            <BudgetSettings
-              budget={budget}
-              currentExpense={monthlyExpense}
-              onBudgetChange={handleBudgetChange}
-            />
-            <ExpenseCharts records={records} />
-            <TransactionCards
-              expenseRecords={expenseRecords}
-              incomeRecords={incomeRecords}
-              selectedCategory={selectedCategory}
-              onCategoryChange={setSelectedCategory}
-            />
-          </>
-        )}
-      </div>
+      <main className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
+        <div className="mx-auto w-full max-w-4xl">
+          {!isLoadingRecords && (
+            <>
+              <BudgetSettings
+                budget={budget}
+                currentExpense={monthlyExpense}
+                onBudgetChange={handleBudgetChange}
+              />
+              <ExpenseCharts records={records} />
+              <TransactionCards
+                expenseRecords={expenseRecords}
+                incomeRecords={incomeRecords}
+                selectedCategory={selectedCategory}
+                onCategoryChange={setSelectedCategory}
+              />
+            </>
+          )}
+        </div>
 
-      <div className="flex-1 overflow-y-auto px-3 py-3 md:px-4">
-        <div className="mx-auto flex max-w-2xl flex-col gap-2.5 md:gap-3">
-          {messages.map((message) => (
-            <div
-              key={message.id}
-              className={`flex ${message.role === "user" ? "justify-end" : "justify-start"}`}
-            >
+        <div className="px-3 py-3 md:px-4">
+          <div className="mx-auto flex max-w-2xl flex-col gap-2.5 md:gap-3">
+            {messages.map((message) => (
               <div
-                className={`max-w-[85%] rounded-2xl px-3.5 py-2.5 md:max-w-[75%] md:px-4 md:py-3 ${
-                  message.role === "user"
-                    ? "rounded-br-md bg-accent text-white"
-                    : "rounded-bl-md bg-white text-neutral-900"
-                }`}
+                key={message.id}
+                className={`flex ${message.role === "user" ? "justify-end" : "justify-start"}`}
               >
-                <p className="whitespace-pre-wrap text-[14px] leading-relaxed md:text-[15px]">
-                  {message.content}
-                </p>
-                <p
-                  className={`mt-1 text-[10px] md:text-[11px] ${
-                    message.role === "user" ? "text-white/70" : "text-neutral-400"
+                <div
+                  className={`max-w-[85%] rounded-2xl px-3.5 py-2.5 md:max-w-[75%] md:px-4 md:py-3 ${
+                    message.role === "user"
+                      ? "rounded-br-md bg-accent text-white"
+                      : "rounded-bl-md bg-white text-neutral-900"
                   }`}
                 >
-                  {message.time}
-                </p>
+                  <p className="whitespace-pre-wrap text-[14px] leading-relaxed md:text-[15px]">
+                    {message.content}
+                  </p>
+                  <p
+                    className={`mt-1 text-[10px] md:text-[11px] ${
+                      message.role === "user" ? "text-white/70" : "text-neutral-400"
+                    }`}
+                  >
+                    {message.time}
+                  </p>
+                </div>
               </div>
-            </div>
-          ))}
+            ))}
 
-          {(isSending || isUploading) && (
-            <div className="flex justify-start">
-              <div className="rounded-2xl rounded-bl-md bg-white px-3.5 py-2.5 md:px-4 md:py-3">
-                <p className="text-[14px] text-neutral-400 md:text-[15px]">
-                  {isUploading ? "영수증 분석 중..." : "입력 중..."}
-                </p>
+            {(isSending || isUploading) && (
+              <div className="flex justify-start">
+                <div className="rounded-2xl rounded-bl-md bg-white px-3.5 py-2.5 md:px-4 md:py-3">
+                  <p className="text-[14px] text-neutral-400 md:text-[15px]">
+                    {isUploading ? "영수증 분석 중..." : "입력 중..."}
+                  </p>
+                </div>
               </div>
-            </div>
-          )}
+            )}
 
-          <div ref={chatEndRef} />
+            <div ref={chatEndRef} />
+          </div>
         </div>
-      </div>
+      </main>
 
       <form
         onSubmit={handleSend}
-        className="shrink-0 border-t border-neutral-200/80 bg-white px-3 py-2.5 md:px-4 md:py-3"
+        className="z-10 shrink-0 border-t border-neutral-200/80 bg-white px-3 pt-2.5 pb-[max(0.625rem,env(safe-area-inset-bottom))] md:px-4 md:pt-3"
       >
         <div className="mx-auto flex max-w-2xl items-end gap-1.5 md:gap-2">
           <input
