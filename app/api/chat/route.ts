@@ -1,9 +1,12 @@
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import { NextResponse } from "next/server";
+import { getGeminiApiKey } from "@/lib/env";
+import { categorizeDescription } from "@/lib/categorize";
 import { todayString } from "@/lib/format";
 import {
   deleteTransactions,
   Expense,
+  fetchAllRecords,
   findRecordsToDelete,
   insertTransaction,
   TransactionType,
@@ -28,7 +31,7 @@ type DeleteCriteria = {
   description?: string;
 };
 
-type ChatAction = "create" | "delete" | null;
+type ChatAction = "create" | "delete" | "query" | null;
 
 type GeminiResult = {
   reply: string;
@@ -37,6 +40,17 @@ type GeminiResult = {
   deleteIds: string[];
   deleteCriteria: DeleteCriteria | null;
 };
+
+function formatRecordsForPrompt(records: Expense[]) {
+  if (records.length === 0) return "내역 없음";
+
+  return records
+    .map(
+      (record) =>
+        `- [${record.type === "income" ? "수입" : "지출"}] ${record.date} ${record.description} ${record.amount}원`,
+    )
+    .join("\n");
+}
 
 function buildSystemPrompt(records: Expense[]) {
   const recent = records
@@ -47,35 +61,52 @@ function buildSystemPrompt(records: Expense[]) {
     )
     .join("\n");
 
-  return `당신은 "성용이의 가계부 챗봇"입니다. 사용자의 자연어 메시지에서 수입/지출 기록, 삭제, 조회를 처리합니다.
+  return `당신은 "성용이의 가계부 챗봇"입니다. 사용자 메시지의 의도를 분류합니다.
 
 오늘 날짜: ${todayString()}
 
-저장된 내역 (삭제 시 id 사용):
+최근 내역 (삭제 시 id 사용):
 ${recent || "없음"}
 
-분석 규칙:
-1. 기록 의도 → action: "create", transaction 추출
-2. 삭제 의도 → action: "delete", deleteIds 또는 deleteCriteria 설정
-3. 삭제 시 최근 내역의 id를 우선 사용합니다.
-4. id를 모르면 deleteCriteria에 date, amount, description, type을 설정합니다.
-5. 삭제할 내역을 특정할 수 없으면 action을 null로 두고 다시 물어봅니다.
-6. 날짜나 금액을 확실히 알 수 없으면 다시 물어봅니다.
-7. 인사, 조회, 잡담에는 action을 null로 설정합니다.
+의도 분류 규칙 (우선순위 순):
+1. 삭제 의도 ("삭제", "지워", "취소") → action: "delete"
+2. 통계/조회 질문 ("얼마", "뭐", "어떻게", "몇", "가장", "총", "?", "알려줘" 등) → action: "query"
+3. 금액 + 지출/수입 기록 ("~원 썼어", "들어왔어", "샀어") → action: "create"
+4. 인사/잡담 → action: null
 
-반드시 아래 JSON 형식으로만 응답하세요. 다른 텍스트는 절대 포함하지 마세요.
+중요:
+- "이번 달 총 지출이 얼마야?" → query (기록 아님)
+- "오늘 점심 15000원" → create (금액 + 기록)
+- "어제 뭐 샀더라?" → query
+- "택시 2만원 삭제해줘" → delete
 
-기록:
-{"reply":"8월 10일 택시 20,000원을 저장했어요!","action":"create","transaction":{"type":"expense","date":"2026-08-10","amount":20000,"description":"택시"},"deleteIds":[],"deleteCriteria":null}
+query일 때 reply는 간단한 확인 문구만 작성하세요. 실제 분석 답변은 별도로 생성됩니다.
 
-삭제 (id 알 때):
-{"reply":"8월 10일 택시 20,000원 내역을 삭제했어요!","action":"delete","transaction":null,"deleteIds":["여기에-id"],"deleteCriteria":null}
+반드시 JSON 형식으로만 응답하세요:
 
-삭제 (조건으로):
-{"reply":"택시 내역을 삭제했어요!","action":"delete","transaction":null,"deleteIds":[],"deleteCriteria":{"type":"expense","date":"2026-08-10","amount":20000,"description":"택시"}}
+기록: {"reply":"저장할게요!","action":"create","transaction":{"type":"expense","date":"2026-09-02","amount":15000,"description":"점심"},"deleteIds":[],"deleteCriteria":null}
+삭제: {"reply":"삭제할게요!","action":"delete","transaction":null,"deleteIds":["id"],"deleteCriteria":null}
+질문: {"reply":"확인해볼게요!","action":"query","transaction":null,"deleteIds":[],"deleteCriteria":null}
+일반: {"reply":"안녕하세요!","action":null,"transaction":null,"deleteIds":[],"deleteCriteria":null}`;
+}
 
-일반 대화:
-{"reply":"안녕하세요!","action":null,"transaction":null,"deleteIds":[],"deleteCriteria":null}`;
+function buildQueryPrompt(records: Expense[], question: string) {
+  return `당신은 친근한 가계부 통계 분석 도우미입니다.
+사용자의 질문에 대해 아래 내역 데이터를 분석해 자연스럽고 친근한 한국어로 답변하세요.
+
+오늘 날짜: ${todayString()}
+
+전체 내역:
+${formatRecordsForPrompt(records)}
+
+사용자 질문: ${question}
+
+답변 규칙:
+1. 금액은 천 단위 콤마를 사용하세요 (예: 15,000원)
+2. 데이터가 없으면 솔직하게 알려주세요
+3. 구체적인 숫자와 항목을 포함해 답변하세요
+4. 2~4문장 정도로 간결하고 친근하게 답변하세요
+5. JSON이 아닌 일반 텍스트로만 답변하세요`;
 }
 
 function sanitizeHistory(history: ChatMessage[]) {
@@ -133,9 +164,16 @@ function parseGeminiResponse(text: string): GeminiResult {
       return empty;
     }
 
+    const action =
+      parsed.action === "create" ||
+      parsed.action === "delete" ||
+      parsed.action === "query"
+        ? parsed.action
+        : null;
+
     const result: GeminiResult = {
       reply: parsed.reply,
-      action: parsed.action === "create" || parsed.action === "delete" ? parsed.action : null,
+      action,
       transaction: null,
       deleteIds: Array.isArray(parsed.deleteIds) ? parsed.deleteIds.filter(Boolean) : [],
       deleteCriteria: parsed.deleteCriteria ?? null,
@@ -210,9 +248,19 @@ function resolveDeleteIds(records: Expense[], parsed: GeminiResult) {
   );
 }
 
+async function answerQuery(
+  genAI: GoogleGenerativeAI,
+  records: Expense[],
+  question: string,
+) {
+  const model = genAI.getGenerativeModel({ model: "gemini-3.6-flash" });
+  const result = await model.generateContent(buildQueryPrompt(records, question));
+  return result.response.text().trim();
+}
+
 export async function POST(request: Request) {
   try {
-    const apiKey = process.env.gemini_api_key;
+    const apiKey = getGeminiApiKey();
     if (!apiKey) {
       return NextResponse.json(
         { error: "Gemini API 키가 설정되지 않았습니다. .env.local을 확인해 주세요." },
@@ -243,6 +291,24 @@ export async function POST(request: Request) {
 
     const result = await chat.sendMessage(message.trim());
     const parsed = parseGeminiResponse(result.response.text());
+
+    if (parsed.action === "query") {
+      const { data: allRecords, error: fetchError } = await fetchAllRecords();
+
+      if (fetchError) {
+        return NextResponse.json({
+          reply: "내역을 불러오지 못했어요. 잠시 후 다시 시도해 주세요.",
+          action: "query",
+        });
+      }
+
+      const reply = await answerQuery(genAI, allRecords, message.trim());
+
+      return NextResponse.json({
+        reply,
+        action: "query",
+      });
+    }
 
     if (parsed.action === "delete") {
       const idsToDelete = resolveDeleteIds(records, parsed);
@@ -278,9 +344,15 @@ export async function POST(request: Request) {
     }
 
     if (parsed.action === "create" && parsed.transaction) {
-      const { data: saved, error: saveError } = await insertTransaction(
-        parsed.transaction,
-      );
+      const category =
+        parsed.transaction.type === "expense"
+          ? await categorizeDescription(parsed.transaction.description)
+          : "기타";
+
+      const { data: saved, error: saveError } = await insertTransaction({
+        ...parsed.transaction,
+        category,
+      });
 
       if (saveError || !saved) {
         return NextResponse.json({

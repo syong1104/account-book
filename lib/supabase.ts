@@ -1,3 +1,4 @@
+import { Category, normalizeCategory } from "@/lib/categories";
 import { createClient } from "@supabase/supabase-js";
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
@@ -14,10 +15,23 @@ export type Expense = {
   amount: number;
   description: string;
   type: TransactionType;
+  category: Category;
 };
 
 export function normalizeType(type: unknown): TransactionType {
   return type === "income" ? "income" : "expense";
+}
+
+export function normalizeRecord(record: Record<string, unknown>): Expense {
+  return {
+    id: record.id as string,
+    created_at: record.created_at as string,
+    date: record.date as string,
+    amount: record.amount as number,
+    description: record.description as string,
+    type: normalizeType(record.type),
+    category: normalizeCategory(record.category),
+  };
 }
 
 export async function insertTransaction({
@@ -25,62 +39,51 @@ export async function insertTransaction({
   amount,
   description,
   type,
+  category,
 }: {
   date: string;
   amount: number;
   description: string;
   type: TransactionType;
+  category?: Category;
 }) {
   const payload = {
     date,
     amount,
     description: description.trim(),
+    type,
+    category: category ?? (type === "expense" ? "기타" : "기타"),
   };
 
-  const withType = await supabase
-    .from("expenses")
-    .insert({ ...payload, type })
-    .select()
-    .single();
+  const result = await supabase.from("expenses").insert(payload).select().single();
 
-  if (!withType.error && withType.data) {
-    return {
-      data: { ...withType.data, type: normalizeType(withType.data.type) } as Expense,
-      error: null,
-    };
+  if (!result.error && result.data) {
+    return { data: normalizeRecord(result.data), error: null };
   }
 
-  const isMissingTypeColumn =
-    withType.error?.code === "PGRST204" &&
-    withType.error.message.includes("'type'");
+  const isMissingColumn =
+    result.error?.code === "PGRST204" &&
+    (result.error.message.includes("'category'") ||
+      result.error.message.includes("'type'"));
 
-  if (isMissingTypeColumn) {
-    if (type === "income") {
-      return {
-        data: null,
-        error: new Error(
-          "수입 저장을 위해 Supabase에 type 컬럼이 필요합니다. SQL Editor에서 add_type_column.sql 쿼리를 실행해 주세요.",
-        ),
-      };
-    }
-
-    const withoutType = await supabase
+  if (isMissingColumn) {
+    const fallback = await supabase
       .from("expenses")
-      .insert(payload)
+      .insert({ date, amount, description: description.trim(), type })
       .select()
       .single();
 
-    if (withoutType.error || !withoutType.data) {
-      return { data: null, error: withoutType.error };
+    if (fallback.error || !fallback.data) {
+      return { data: null, error: fallback.error };
     }
 
     return {
-      data: { ...withoutType.data, type: "expense" } as Expense,
+      data: normalizeRecord({ ...fallback.data, category: category ?? "기타" }),
       error: null,
     };
   }
 
-  return { data: null, error: withType.error };
+  return { data: null, error: result.error };
 }
 
 export async function deleteTransactions(ids: string[]) {
@@ -120,4 +123,20 @@ export function findRecordsToDelete(
     }
     return true;
   });
+}
+
+export async function fetchAllRecords() {
+  const { data, error } = await supabase
+    .from("expenses")
+    .select("*")
+    .order("created_at", { ascending: false });
+
+  if (error) {
+    return { data: [] as Expense[], error };
+  }
+
+  return {
+    data: (data ?? []).map((record) => normalizeRecord(record)),
+    error: null,
+  };
 }
